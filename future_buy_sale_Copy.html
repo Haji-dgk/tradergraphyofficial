@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ur">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ApexFX Hybrid Dual Trade Scanner (Top 10 Volume Engine)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #0b0f17; color: #c9d1d9; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .glass-card { background: rgba(18, 24, 38, 0.9); backdrop-filter: blur(12px); border: 1px solid rgba(48, 54, 61, 0.7); }
+        
+        .chart-callout-box {
+            position: absolute;
+            background: #000000;
+            color: #ffffff;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 11px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.85);
+            z-index: 30;
+            max-width: 260px;
+            pointer-events: none;
+            line-height: 1.4;
+        }
+        .callout-header {
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .badge-red { color: #f87171; border-bottom: 1px solid #ef4444; }
+        .badge-blue { color: #60a5fa; border-bottom: 1px solid #3b82f6; }
+        .badge-green { color: #4ade80; border-bottom: 1px solid #10b981; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0d1117; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Top Navigation Header -->
+    <header class="h-14 glass-card border-b flex items-center justify-between px-4 z-40">
+        <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-2 text-indigo-400 font-bold text-lg">
+                <i class="fa-solid fa-chart-line"></i>
+                <span>ApexFX Dual Setup Manager</span>
+            </div>
+            <span id="marketBadge" class="bg-indigo-900/50 text-indigo-300 text-xs px-2 py-0.5 rounded border border-indigo-700/50">Futures Mode</span>
+            
+            <!-- 24/7 Scanner Indicator Badge -->
+            <span class="bg-emerald-950/80 text-emerald-400 text-xs px-2.5 py-1 rounded border border-emerald-700/50 font-mono flex items-center space-x-1">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Top 10 Auto Scanner 24/7: ON</span>
+            </span>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <!-- Scan New Setup Toggle Button -->
+            <button id="btnScanSetup" onclick="toggleScanMode()" class="px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:text-white transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-bolt text-amber-400"></i>
+                <span id="scanBtnText">Scan New Setup: OFF</span>
+            </button>
+
+            <!-- Market Mode Selector -->
+            <div class="flex bg-gray-900 p-0.5 rounded-lg border border-gray-700 text-xs">
+                <button id="btnSpot" onclick="switchMarket('spot')" class="px-3 py-1 rounded-md text-gray-400 hover:text-white transition">Spot</button>
+                <button id="btnFutures" onclick="switchMarket('futures')" class="px-3 py-1 rounded-md bg-indigo-600 text-white font-semibold transition">Futures</button>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="relative">
+                <div class="flex items-center">
+                    <input type="text" id="symbolInput" autocomplete="off" onkeyup="filterSymbols()" placeholder="Search pair..." value="BNBUSDT" class="bg-gray-900 text-white text-xs px-3 py-1.5 rounded-lg border border-gray-700 focus:outline-none focus:border-indigo-500 uppercase font-mono w-32">
+                    <button onclick="changeSymbolFromInput()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-2.5 py-1.5 rounded ml-1 transition"><i class="fa-solid fa-magnifying-glass"></i></button>
+                </div>
+                <div id="searchDropdown" class="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg max-h-48 overflow-y-auto hidden z-50 custom-scrollbar font-mono text-xs"></div>
+            </div>
+
+            <!-- Timeframe Selector -->
+            <div class="flex space-x-1 bg-gray-900 p-0.5 rounded-lg border border-gray-700 text-xs">
+                <button onclick="setTimeframe('1m')" class="tf-btn px-2 py-1 rounded text-gray-400 hover:text-white">1m</button>
+                <button onclick="setTimeframe('5m')" class="tf-btn px-2 py-1 rounded text-gray-400 hover:text-white">5m</button>
+                <button onclick="setTimeframe('15m')" class="tf-btn px-2 py-1 rounded text-gray-400 hover:text-white">15m</button>
+                <button onclick="setTimeframe('1h')" class="tf-btn px-2 py-1 rounded bg-indigo-600 text-white font-semibold">1h</button>
+                <button onclick="setTimeframe('4h')" class="tf-btn px-2 py-1 rounded text-gray-400 hover:text-white">4h</button>
+                <button onclick="setTimeframe('1d')" class="tf-btn px-2 py-1 rounded text-gray-400 hover:text-white">1D</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar -->
+        <div class="w-72 glass-card border-r flex flex-col p-4 space-y-4 custom-scrollbar overflow-y-auto">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center justify-between">
+                <span id="pairsListTitle">🔥 Top 10 Volume Pairs</span>
+                <i class="fa-solid fa-fire text-amber-400"></i>
+            </h3>
+
+            <!-- Top 10 Quick Pairs -->
+            <div id="quickPairsContainer" class="grid grid-cols-1 gap-1.5 font-mono text-xs max-h-56 overflow-y-auto custom-scrollbar"></div>
+
+            <hr class="border-gray-800">
+
+            <!-- Active Trade Plan Card -->
+            <div class="space-y-2 bg-black/50 p-3 rounded-lg border border-gray-800 font-mono text-xs">
+                <div class="flex justify-between items-center pb-2 border-b border-gray-800">
+                    <span class="text-gray-400">Trade Type:</span>
+                    <span id="planType" class="font-bold px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800">--</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">Entry Price:</span>
+                    <span id="planEntry" class="text-indigo-400 font-bold">0.00</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">Stop Loss (SL):</span>
+                    <span id="planSL" class="text-red-400 font-bold">0.00</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">Take Profit (TP):</span>
+                    <span id="planTP" class="text-emerald-400 font-bold">0.00</span>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">Status & Timing</h3>
+                <div id="tradeStatusBox" class="p-2 bg-black rounded border border-indigo-500/30 text-[11px] font-mono text-indigo-300">
+                    Monitoring Trend...
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Chart Area -->
+        <div class="flex-1 relative flex flex-col bg-gray-950 overflow-hidden">
+            <div id="chartContainer" class="w-full h-full"></div>
+
+            <!-- Left Callout Boxes -->
+            <div id="calloutOverlay" class="absolute inset-0 pointer-events-none z-20">
+                <div id="boxSupply" class="chart-callout-box" style="top: 60px; left: 20px;">
+                    <div id="boxHeader1" class="callout-header badge-red">
+                        <span id="boxTitle1">1. SETUP ZONE</span>
+                        <i id="boxIcon1" class="fa-solid fa-arrow-down-long ml-2"></i>
+                    </div>
+                    <p id="boxText1" class="text-gray-200">Analysis in progress...</p>
+                </div>
+
+                <div id="boxTrend" class="chart-callout-box" style="top: 190px; left: 20px;">
+                    <div id="boxHeader2" class="callout-header badge-blue">
+                        <span id="boxTitle2">2. MARKET STRUCTURE</span>
+                        <i id="boxIcon2" class="fa-solid fa-arrow-down-long ml-2"></i>
+                    </div>
+                    <p id="boxText2" class="text-gray-200">Trendline test active hai.</p>
+                </div>
+
+                <div id="boxDemand" class="chart-callout-box" style="top: 320px; left: 20px;">
+                    <div id="boxHeader3" class="callout-header badge-green">
+                        <span id="boxTitle3">3. PROFIT TARGET (TP)</span>
+                        <i id="boxIcon3" class="fa-solid fa-arrow-up-long ml-2"></i>
+                    </div>
+                    <p id="boxText3" class="text-gray-200">Yeh hamara TP target hai.</p>
+                </div>
+            </div>
+            
+            <!-- Live Status HUD -->
+            <div class="absolute top-3 right-20 z-30 bg-gray-900/90 backdrop-filter blur border border-gray-800 px-3 py-1.5 rounded-lg flex items-center space-x-3 text-xs font-mono">
+                <span id="hudSymbol" class="font-bold text-white">BNBUSDT</span>
+                <span id="hudPrice" class="text-emerald-400 font-bold">0.00</span>
+                <span id="hudMode" class="text-indigo-400 font-semibold">[Futures]</span>
+                <span class="flex items-center text-gray-400 text-[11px]">
+                    <span id="liveStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse mr-1"></span>
+                    <span id="liveStatusText">100% Live</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container for Side Notifications -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <script>
+        let currentSymbol = 'BNBUSDT';
+        let currentTimeframe = '1h';
+        let marketType = 'futures';
+        let chart = null, candlestickSeries = null, lineSeriesList = [];
+        let candleData = [];
+
+        let isScanModeActive = false;
+        let allSpotSymbols = [];
+        let allFuturesSymbols = [];
+        let top10SpotSymbols = [];
+        let top10FuturesSymbols = [];
+        let ws = null;
+        let pollingInterval = null;
+
+        const TELEGRAM_BOT_TOKEN = '8653413954:AAFZ2xuzzzRzdIAk8Bob9TfujvxKkVxWusQ';
+        const TELEGRAM_CHAT_ID = '8495129698';
+
+        function initChart() {
+            const container = document.getElementById('chartContainer');
+            if (chart) { container.innerHTML = ''; }
+
+            chart = LightweightCharts.createChart(container, {
+                layout: { backgroundColor: '#090d16', textColor: '#9ca3af' },
+                grid: { vertLines: { color: '#161e2e' }, horzLines: { color: '#161e2e' } },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                rightPriceScale: { borderColor: '#1f2937', autoScale: true },
+                timeScale: { borderColor: '#1f2937', timeVisible: true }
+            });
+
+            candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#10b981', downColor: '#ef4444',
+                borderUpColor: '#10b981', borderDownColor: '#ef4444',
+                wickUpColor: '#10b981', wickDownColor: '#ef4444'
+            });
+
+            window.addEventListener('resize', () => {
+                if (chart && container) {
+                    chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+                }
+            });
+        }
+
+        function toggleScanMode() {
+            isScanModeActive = !isScanModeActive;
+            const btn = document.getElementById('btnScanSetup');
+            const txt = document.getElementById('scanBtnText');
+
+            if (isScanModeActive) {
+                btn.className = "px-3 py-1.5 rounded-lg bg-amber-600 border border-amber-500 text-xs text-white font-bold transition flex items-center space-x-1.5 shadow-lg shadow-amber-900/40";
+                txt.innerText = "Scan New Setup: ON";
+            } else {
+                btn.className = "px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:text-white transition flex items-center space-x-1.5";
+                txt.innerText = "Scan New Setup: OFF";
+            }
+
+            analyzeAndDraw();
+        }
+
+        // Fetch symbols and sort top 10 pairs by 24h volume
+        async function fetchExchangeSymbols() {
+            try {
+                // Fetch Spot symbols & volume
+                const spotRes = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+                const spotData = await spotRes.json();
+                const filteredSpot = spotData.filter(s => s.symbol.endsWith('USDT'));
+                filteredSpot.sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+                allSpotSymbols = filteredSpot.map(s => s.symbol);
+                top10SpotSymbols = allSpotSymbols.slice(0, 10);
+
+                // Fetch Futures symbols & volume
+                const futRes = await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
+                const futData = await futRes.json();
+                const filteredFut = futData.filter(s => s.symbol.endsWith('USDT'));
+                filteredFut.sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+                allFuturesSymbols = filteredFut.map(s => s.symbol);
+                top10FuturesSymbols = allFuturesSymbols.slice(0, 10);
+
+                renderQuickPairs();
+                runAutoMultiPairScanner();
+            } catch (err) {
+                console.error("Error fetching symbols:", err);
+            }
+        }
+
+        // 24/7 Scanner only for Top 10 High-Volume Pairs
+        async function runAutoMultiPairScanner() {
+            while (true) {
+                const top10List = marketType === 'futures' ? top10FuturesSymbols : top10SpotSymbols;
+
+                if (top10List && top10List.length > 0) {
+                    for (let sym of top10List) {
+                        try {
+                            const data = await fetchBinanceKlines(sym, currentTimeframe, marketType);
+                            if (data && data.length >= 50) {
+                                const len = data.length;
+                                const currentPrice = data[len - 1].close;
+                                const firstPrice = data[len - 35].close;
+                                const targetSlice = data.slice(-15);
+
+                                let highest = Math.max(...targetSlice.map(c => c.high));
+                                let lowest = Math.min(...targetSlice.map(c => c.low));
+
+                                const isBullish = currentPrice > firstPrice && (currentPrice - lowest) > (highest - currentPrice);
+                                let entryPrice = isBullish ? lowest * 1.015 : highest * 0.985;
+                                let slPrice = isBullish ? lowest * 0.995 : highest * 1.005;
+                                let tpPrice = isBullish ? highest * 0.99 : lowest * 1.01;
+                                let side = isBullish ? "LONG" : "SHORT";
+
+                                const diffPercent = Math.abs((currentPrice - entryPrice) / entryPrice) * 100;
+
+                                if (diffPercent <= 0.2) {
+                                    const precision = getPrecision(currentPrice);
+                                    const alertTitle = `🔥 Top 10 Alert: ${sym} (${marketType.toUpperCase()})`;
+                                    const alertBody = `Side: ${side}<br>Price: ${currentPrice.toFixed(precision)}<br>Entry: ${entryPrice.toFixed(precision)}`;
+
+                                    showSideNotification(alertTitle, side === 'LONG' ? 'success' : 'error', alertBody);
+                                    sendTelegramAlert(sym, marketType, side, currentPrice, entryPrice, slPrice, tpPrice, precision);
+                                }
+                            }
+                        } catch (err) {
+                            console.error("Top 10 Scanner Error on", sym, err);
+                        }
+                        await new Promise(r => setTimeout(r, 400));
+                    }
+                }
+                await new Promise(r => setTimeout(r, 3000));
+            }
+        }
+
+        function renderQuickPairs() {
+            const container = document.getElementById('quickPairsContainer');
+            const symbols = marketType === 'spot' ? top10SpotSymbols : top10FuturesSymbols;
+            
+            container.innerHTML = symbols.map((sym, idx) => `
+                <button onclick="loadPair('${sym}')" class="p-2 rounded bg-gray-900/80 hover:bg-indigo-600 text-left transition flex justify-between items-center border border-gray-800 ${sym === currentSymbol ? 'border-indigo-500 bg-indigo-950/40' : ''}">
+                    <span class="font-bold text-white"><span class="text-amber-400 mr-1">#${idx+1}</span>${sym}</span>
+                    <span class="text-[10px] text-gray-400 uppercase">${marketType}</span>
+                </button>
+            `).join('');
+        }
+
+        function filterSymbols() {
+            const query = document.getElementById('symbolInput').value.trim().toUpperCase();
+            const dropdown = document.getElementById('searchDropdown');
+            const list = marketType === 'spot' ? allSpotSymbols : allFuturesSymbols;
+
+            if (!query) { dropdown.classList.add('hidden'); return; }
+
+            const matches = list.filter(s => s.includes(query)).slice(0, 10);
+            if (matches.length > 0) {
+                dropdown.innerHTML = matches.map(s => `
+                    <div onclick="selectSymbol('${s}')" class="p-2 hover:bg-indigo-600 cursor-pointer border-b border-gray-800 text-white flex justify-between">
+                        <span>${s}</span>
+                        <span class="text-[10px] text-gray-400">${marketType.toUpperCase()}</span>
+                    </div>
+                `).join('');
+                dropdown.classList.remove('hidden');
+            } else {
+                dropdown.classList.add('hidden');
+            }
+        }
+
+        function selectSymbol(sym) {
+            currentSymbol = sym;
+            document.getElementById('symbolInput').value = sym;
+            document.getElementById('searchDropdown').classList.add('hidden');
+            loadData();
+        }
+
+        async function fetchBinanceKlines(symbol, interval, type) {
+            const baseUrl = type === 'futures' 
+                ? 'https://fapi.binance.com/fapi/v1/klines' 
+                : 'https://api.binance.com/api/v3/klines';
+            
+            const response = await fetch(`${baseUrl}?symbol=${symbol}&interval=${interval}&limit=200`);
+            const data = await response.json();
+            
+            return data.map(d => ({
+                time: Math.floor(d[0] / 1000),
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4])
+            }));
+        }
+
+        function getPrecision(price) {
+            if (price < 0.001) return 6;
+            if (price < 1) return 4;
+            return 2;
+        }
+
+        function analyzeAndDraw() {
+            clearLines();
+            if (!candleData || candleData.length < 50) return;
+
+            const len = candleData.length;
+            const currentPrice = candleData[len - 1].close;
+            const firstPrice = candleData[len - 35].close;
+            const precision = getPrecision(currentPrice);
+            document.getElementById('hudPrice').innerText = currentPrice.toFixed(precision);
+
+            const windowSize = isScanModeActive ? 15 : 35;
+            const targetSlice = candleData.slice(-windowSize);
+
+            let highest = Math.max(...targetSlice.map(c => c.high));
+            let lowest = Math.min(...targetSlice.map(c => c.low));
+            let highCandle = targetSlice.find(c => c.high === highest);
+            let lowCandle = targetSlice.find(c => c.low === lowest);
+
+            const isBullish = currentPrice > firstPrice && (currentPrice - lowest) > (highest - currentPrice);
+            const planTypeEl = document.getElementById('planType');
+            const statusBox = document.getElementById('tradeStatusBox');
+
+            if (isBullish) {
+                let entryPrice = lowest * 1.015;
+                let slPrice = lowest * 0.995;
+                let tpPrice = highest * 0.99;
+
+                planTypeEl.innerText = isScanModeActive ? "NEW SCAN (LONG)" : "BUY (LONG)";
+                planTypeEl.className = isScanModeActive 
+                    ? "font-bold px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800 animate-pulse"
+                    : "font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800";
+
+                document.getElementById('planEntry').innerText = entryPrice.toFixed(precision);
+                document.getElementById('planSL').innerText = slPrice.toFixed(precision);
+                document.getElementById('planTP').innerText = tpPrice.toFixed(precision);
+
+                const isTargetAchieved = !isScanModeActive && (highest >= tpPrice || currentPrice >= tpPrice);
+                if (isScanModeActive) {
+                    statusBox.innerHTML = `<span class="text-amber-400 font-bold">⚡ Active Scan (Bullish)...</span><br>Marking live upward structure.`;
+                } else if (isTargetAchieved) {
+                    let achievedTime = new Date(highCandle.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    statusBox.innerHTML = `<span class="text-emerald-400 font-bold">✅ Target Achieved!</span><br>Bullish trend completed at ${achievedTime}`;
+                } else {
+                    statusBox.innerHTML = `<span class="text-amber-400 font-bold">⏳ Setup Active</span><br>Waiting for price to reach Buy TP.`;
+                }
+
+                document.getElementById('boxTitle1').innerText = "1. TARGET ZONE (SUPPLY)";
+                document.getElementById('boxText1').innerText = "Upar resistance zone hai. Yeh hamara Take Profit (TP) target hai.";
+                document.getElementById('boxHeader1').className = "callout-header badge-green";
+                document.getElementById('boxIcon1').className = "fa-solid fa-arrow-up-long ml-2";
+
+                document.getElementById('boxTitle2').innerText = "2. BULLISH CONTINUATION";
+                document.getElementById('boxText2').innerText = "Higher lows ban rahe hain. Upward structure active hai.";
+                document.getElementById('boxHeader2').className = "callout-header badge-blue";
+                document.getElementById('boxIcon2').className = "fa-solid fa-arrow-up-long ml-2";
+
+                document.getElementById('boxTitle3').innerText = "3. BUYERS DEMAND ZONE";
+                document.getElementById('boxText3').innerText = "Strong buyers area. Entry aur SL boundary zone.";
+                document.getElementById('boxHeader3').className = "callout-header badge-red";
+                document.getElementById('boxIcon3').className = "fa-solid fa-arrow-down-long ml-2";
+
+                const lineThemeColor = isScanModeActive ? '#f59e0b' : '#10b981';
+                drawLine(highCandle.time, highest, candleData[len - 1].time + 3600*6, highest, lineThemeColor, 2, `3. TARGET TP (${tpPrice.toFixed(precision)})`);
+                drawLine(lowCandle.time, lowest, candleData[len - 1].time, entryPrice, '#3b82f6', 2, `2. BULLISH TRENDLINE`);
+                drawLine(candleData[len - 15].time, entryPrice, candleData[len - 1].time + 3600*6, entryPrice, '#6366f1', 2, `ENTRY (${entryPrice.toFixed(precision)})`);
+                drawLine(lowCandle.time, lowest, candleData[len - 1].time + 3600*6, lowest, '#ef4444', 2, `1. DEMAND ZONE (SL: ${slPrice.toFixed(precision)})`);
+
+                candlestickSeries.setMarkers([
+                    { time: lowCandle.time, position: 'belowBar', color: lineThemeColor, shape: 'arrowUp', text: isScanModeActive ? 'NEW SCAN ENTRY' : 'BUY ENTRY ZONE' },
+                    { time: highCandle.time, position: 'aboveBar', color: lineThemeColor, shape: 'arrowDown', text: isTargetAchieved ? 'TP ACHIEVED' : 'TP TARGET' }
+                ]);
+
+            } else {
+                let entryPrice = highest * 0.985;
+                let slPrice = highest * 1.005;
+                let tpPrice = lowest * 1.01;
+
+                planTypeEl.innerText = isScanModeActive ? "NEW SCAN (SHORT)" : "SELL (SHORT)";
+                planTypeEl.className = isScanModeActive 
+                    ? "font-bold px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800 animate-pulse"
+                    : "font-bold px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800";
+
+                document.getElementById('planEntry').innerText = entryPrice.toFixed(precision);
+                document.getElementById('planSL').innerText = slPrice.toFixed(precision);
+                document.getElementById('planTP').innerText = tpPrice.toFixed(precision);
+
+                const isTargetAchieved = !isScanModeActive && (lowest <= tpPrice || currentPrice <= tpPrice);
+                if (isScanModeActive) {
+                    statusBox.innerHTML = `<span class="text-amber-400 font-bold">⚡ Active Scan (Bearish)...</span><br>Marking live downward structure.`;
+                } else if (isTargetAchieved) {
+                    let achievedTime = new Date(lowCandle.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    statusBox.innerHTML = `<span class="text-emerald-400 font-bold">✅ Target Achieved!</span><br>Bearish trend completed at ${achievedTime}`;
+                } else {
+                    statusBox.innerHTML = `<span class="text-amber-400 font-bold">⏳ Setup Active</span><br>Waiting for price to reach Sell TP.`;
+                }
+
+                document.getElementById('boxTitle1').innerText = "1. SELL SETUP (SUPPLY ZONE)";
+                document.getElementById('boxText1').innerText = "Upar sellers ka zone hai. Market yahan se neechay gir sakti hai.";
+                document.getElementById('boxHeader1').className = "callout-header badge-red";
+                document.getElementById('boxIcon1').className = "fa-solid fa-arrow-down-long ml-2";
+
+                document.getElementById('boxTitle2').innerText = "2. BEARISH REJECTION";
+                document.getElementById('boxText2').innerText = "Trendline test ho chuki hai. Short trade plan active hai.";
+                document.getElementById('boxHeader2').className = "callout-header badge-blue";
+                document.getElementById('boxIcon2').className = "fa-solid fa-arrow-down-long ml-2";
+
+                document.getElementById('boxTitle3').innerText = "3. PROFIT TARGET (TP)";
+                document.getElementById('boxText3').innerText = "Yeh hamara Demand Zone / TP target hai.";
+                document.getElementById('boxHeader3').className = "callout-header badge-green";
+                document.getElementById('boxIcon3').className = "fa-solid fa-arrow-up-long ml-2";
+
+                const lineThemeColor = isScanModeActive ? '#f59e0b' : '#ef4444';
+                drawLine(highCandle.time, highest, candleData[len - 1].time + 3600*6, highest, lineThemeColor, 2, `1. SUPPLY ZONE (SL: ${slPrice.toFixed(precision)})`);
+                drawLine(highCandle.time, highest, candleData[len - 1].time, entryPrice, '#3b82f6', 2, `2. TRENDLINE`);
+                drawLine(candleData[len - 15].time, entryPrice, candleData[len - 1].time + 3600*6, entryPrice, '#6366f1', 2, `ENTRY (${entryPrice.toFixed(precision)})`);
+                drawLine(lowCandle.time, lowest, candleData[len - 1].time + 3600*6, lowest, '#10b981', 2, `3. DEMAND ZONE / TP (${tpPrice.toFixed(precision)})`);
+
+                candlestickSeries.setMarkers([
+                    { time: highCandle.time, position: 'aboveBar', color: lineThemeColor, shape: 'arrowDown', text: isScanModeActive ? 'NEW SCAN ENTRY' : 'SELL ENTRY ZONE' },
+                    { time: lowCandle.time, position: 'belowBar', color: '#10b981', shape: 'arrowUp', text: isTargetAchieved ? 'TP ACHIEVED' : 'TP TARGET' }
+                ]);
+            }
+        }
+
+        async function sendTelegramAlert(symbol, market, side, currentPrice, entryPrice, sl, tp, precision) {
+            if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+            const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+            const tgMsg = `🚨 *ApexFX Top 10 Live Alert* 🚨\n\n*Pair:* \`${symbol}\` (${market.toUpperCase()})\n*Type:* \`${side}\`\n*Current Price:* \`${currentPrice.toFixed(precision)}\`\n*Entry Level:* \`${entryPrice.toFixed(precision)}\`\n*SL:* \`${sl.toFixed(precision)}\`\n*TP:* \`${tp.toFixed(precision)}\``;
+            
+            try {
+                await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: TELEGRAM_CHAT_ID,
+                        text: tgMsg,
+                        parse_mode: 'Markdown'
+                    })
+                });
+            } catch (err) {
+                console.error("Telegram Webhook Error:", err);
+            }
+        }
+
+        function showSideNotification(title, type = "info", body = "") {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-emerald-900/90 border-emerald-500' : 
+                            type === 'error' ? 'bg-red-900/90 border-red-500' : 'bg-indigo-900/90 border-indigo-500';
+
+            toast.className = `p-3 rounded-lg border text-white text-xs font-mono shadow-2xl transition-all duration-500 transform translate-x-full pointer-events-auto max-w-xs ${bgColor}`;
+            toast.innerHTML = `
+                <div class="flex items-center justify-between font-bold border-b border-gray-700/50 pb-1 mb-1">
+                    <span>${title}</span>
+                    <i class="fa-solid fa-bell text-amber-400"></i>
+                </div>
+                ${body ? `<div class="text-[11px] text-gray-200">${body}</div>` : ''}
+            `;
+
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-x-full'), 100);
+
+            setTimeout(() => {
+                toast.classList.add('translate-x-full');
+                setTimeout(() => toast.remove(), 500);
+            }, 5000);
+        }
+
+        function drawLine(startTime, startPrice, endTime, endPrice, color, width = 1, title = '') {
+            if (!chart) return;
+            const line = chart.addLineSeries({ color: color, lineWidth: width, title: title });
+            line.setData([{ time: startTime, value: startPrice }, { time: endTime, value: endPrice }]);
+            lineSeriesList.push(line);
+        }
+
+        function clearLines() {
+            lineSeriesList.forEach(line => {
+                try { if (chart) chart.removeSeries(line); } catch(e) {}
+            });
+            lineSeriesList = [];
+        }
+
+        async function loadData() {
+            if (ws) { ws.close(); ws = null; }
+            if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+
+            document.getElementById('hudSymbol').innerText = currentSymbol;
+            document.getElementById('hudMode').innerText = `[${marketType.toUpperCase()}]`;
+            document.getElementById('hudPrice').innerText = 'Loading...';
+            
+            try {
+                candleData = await fetchBinanceKlines(currentSymbol, currentTimeframe, marketType);
+                if (candleData && candleData.length > 0) {
+                    candlestickSeries.setData(candleData);
+                    chart.timeScale().fitContent();
+                    analyzeAndDraw();
+                    startLiveUpdates();
+                }
+                renderQuickPairs();
+            } catch (err) {
+                console.error("Error loading data:", err);
+            }
+        }
+
+        function startLiveUpdates() {
+            if (ws) { ws.close(); ws = null; }
+            if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+
+            const stream = `${currentSymbol.toLowerCase()}@kline_${currentTimeframe}`;
+            const wsUrl = marketType === 'futures' 
+                ? `wss://fstream.binance.com/ws/${stream}` 
+                : `wss://stream.binance.com:9443/ws/${stream}`;
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    const k = data.k ? data.k : (data.data ? data.data.k : null);
+                    if (k) { updateChartWithTick(k); }
+                };
+
+                ws.onerror = () => { fallbackToPolling(); };
+            } catch (e) {
+                fallbackToPolling();
+            }
+        }
+
+        function fallbackToPolling() {
+            if (ws) { ws.close(); ws = null; }
+            if (pollingInterval) clearInterval(pollingInterval);
+
+            pollingInterval = setInterval(async () => {
+                try {
+                    const freshData = await fetchBinanceKlines(currentSymbol, currentTimeframe, marketType);
+                    if (freshData && freshData.length > 0) {
+                        const latest = freshData[freshData.length - 1];
+                        if (candlestickSeries) candlestickSeries.update(latest);
+                        const precision = getPrecision(latest.close);
+                        document.getElementById('hudPrice').innerText = latest.close.toFixed(precision);
+                    }
+                } catch (err) {
+                    console.error("Polling error:", err);
+                }
+            }, 1000);
+        }
+
+        function updateChartWithTick(k) {
+            const liveCandle = {
+                time: Math.floor(k.t / 1000),
+                open: parseFloat(k.o),
+                high: parseFloat(k.h),
+                low: parseFloat(k.l),
+                close: parseFloat(k.c)
+            };
+            if (candlestickSeries) candlestickSeries.update(liveCandle);
+            const precision = getPrecision(liveCandle.close);
+            document.getElementById('hudPrice').innerText = liveCandle.close.toFixed(precision);
+
+            if (isScanModeActive) { analyzeAndDraw(); }
+        }
+
+        function switchMarket(type) {
+            marketType = type;
+            document.getElementById('marketBadge').innerText = `${type.toUpperCase()} Mode`;
+            document.getElementById('pairsListTitle').innerText = `🔥 Top 10 ${type.toUpperCase()} Pairs`;
+            
+            document.getElementById('btnSpot').className = type === 'spot' 
+                ? 'px-3 py-1 rounded-md bg-indigo-600 text-white font-semibold transition' 
+                : 'px-3 py-1 rounded-md text-gray-400 hover:text-white transition';
+                
+            document.getElementById('btnFutures').className = type === 'futures' 
+                ? 'px-3 py-1 rounded-md bg-indigo-600 text-white font-semibold transition' 
+                : 'px-3 py-1 rounded-md text-gray-400 hover:text-white transition';
+
+            const top10List = type === 'spot' ? top10SpotSymbols : top10FuturesSymbols;
+            if (top10List.length > 0) {
+                currentSymbol = top10List[0];
+                document.getElementById('symbolInput').value = currentSymbol;
+            }
+
+            loadData();
+        }
+
+        function setTimeframe(tf) {
+            currentTimeframe = tf;
+            document.querySelectorAll('.tf-btn').forEach(btn => {
+                btn.className = btn.innerText.toLowerCase() === tf 
+                    ? 'tf-btn px-2 py-1 rounded bg-indigo-600 text-white font-semibold' 
+                    : 'tf-btn px-2 py-1 rounded text-gray-400 hover:text-white';
+            });
+            loadData();
+        }
+
+        function changeSymbolFromInput() {
+            const sym = document.getElementById('symbolInput').value.trim().toUpperCase();
+            if (sym) { currentSymbol = sym; loadData(); }
+        }
+
+        function loadPair(pair) {
+            currentSymbol = pair;
+            document.getElementById('symbolInput').value = pair;
+            loadData();
+        }
+
+        window.onload = async () => {
+            initChart();
+            await fetchExchangeSymbols();
+            loadData();
+        };
+    </script>
+</body>
+</html>
